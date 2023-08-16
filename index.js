@@ -1,11 +1,19 @@
-const { ImmutableX, Config } = require("@imtbl/core-sdk");
-const { generateStarkPrivateKey, createStarkSigner } = require('@imtbl/core-sdk');
+const {
+  ImmutableX,
+  Config,
+  generateLegacyStarkPrivateKey,
+} = require("@imtbl/core-sdk");
+const {
+  generateStarkPrivateKey,
+  createStarkSigner,
+} = require("@imtbl/core-sdk");
 const { InfuraProvider } = require("@ethersproject/providers");
 const { Wallet } = require("@ethersproject/wallet");
 const axios = require("axios");
 require("dotenv").config();
 const prompt = require("prompt");
 
+const chunkSize = 100;
 
 prompt.start();
 
@@ -17,12 +25,14 @@ function sleep(ms) {
 
 const config = Config.PRODUCTION;
 const client = new ImmutableX(config);
-const starkPrivateKey = generateStarkPrivateKey(); // Or retrieve previously generated key
-const starkSigner = createStarkSigner(starkPrivateKey);
-const provider = new InfuraProvider(
-  "mainnet",
-  process.env.INFURA_API_KEY
-);
+
+const provider = new InfuraProvider("mainnet", process.env.INFURA_API_KEY);
+
+const generateL2Signer = (l1Signer) => {
+  const starkPrivateKey = generateLegacyStarkPrivateKey(l1Signer); // Or retrieve previously generated key
+  const starkSigner = createStarkSigner(starkPrivateKey);
+  return starkSigner;
+};
 
 const getResults = async (cursor, results, walletAddress) => {
   const { data: transfer_data } = await axios.get(
@@ -48,37 +58,38 @@ prompt.get(
     const transfers = await getResults("", [], result.kerms_hacked_wallet);
     const signer = new Wallet(result.sewlies_private_key).connect(provider);
 
-    const allTransfers = transfers.map(async (transfer) => {
+    const allTransfers = transfers.map((transfer) => {
       const {
         transaction_id,
         receiver,
         token: { data, type },
       } = transfer;
+
       const { token_id, id, token_address } = data;
-      if (
-        receiver.toLowerCase() ===
-        "0xd29fc529ca21137c108617e3cdf03c382c1b7aa8".toLowerCase()
-      ) {
-        const payload = {
-          type: "ERC721",
-          tokenId: token_id,
-          tokenAddress: token_address,
-          receiver: result.kerms_new_wallet,
-        };
-        try {
-          await sleep(1000)
-          const currenttransfer = await client.transfer({ ethSigner:signer, starkSigner }, payload);
-          console.log(currenttransfer)
-          return currenttransfer
-        } catch (e) {
-          return e.message;
-        }
-      }
-      return {};
+      return {
+        receiver: result.kerms_new_wallet,
+        tokenId: token_id,
+        tokenAddress: token_address,
+      };
     });
 
-    const resulting = await Promise.allSettled(allTransfers);
+    const starkSigner = generateL2Signer(signer);
 
-    console.log(resulting);
+    const walletConnection = {
+      ethSigner: signer,
+      starkSigner
+    }
+    
+    const completedTransfers = [];
+
+    for (let i = 0; i < allTransfers.length; i += chunkSize) {
+      const chunk = allTransfers.slice(i, i + chunkSize);
+      const t = await client.batchNftTransfer(walletConnection, chunk)
+      console.log(t);
+      completedTransfers.push(t);
+    }
+
+    console.log(completedTransfers);
+
   }
 );
