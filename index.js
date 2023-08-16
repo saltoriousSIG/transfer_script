@@ -1,11 +1,19 @@
 const { ImmutableX, Config } = require("@imtbl/core-sdk");
+const { generateStarkPrivateKey, createStarkSigner } = require('@imtbl/core-sdk');
 const { InfuraProvider } = require("@ethersproject/providers");
 const { Wallet } = require("@ethersproject/wallet");
 const axios = require("axios");
 require("dotenv").config();
 const prompt = require("prompt");
 
+
 prompt.start();
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 const config = Config.PRODUCTION;
 const client = new ImmutableX(config);
@@ -58,7 +66,10 @@ prompt.get(
           receiver: result.kerms_new_wallet,
         };
         try {
-          return await client.transfer({ signer, starkSigner }, payload);
+          await sleep(1000)
+          const currenttransfer = await client.transfer({ ethSigner:signer, starkSigner }, payload);
+          console.log(currenttransfer)
+          return currenttransfer
         } catch (e) {
           return e.message;
         }
@@ -66,8 +77,8 @@ prompt.get(
       return {};
     });
 
-    const result = await Promise.allSettled(allTransfers);
+    const resulting = await Promise.allSettled(allTransfers);
 
-    console.log(result);
+    console.log(resulting);
   }
 );
